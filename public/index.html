@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>線上共同畫板</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎨</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 圖示（Lucide, ISC License） -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="17.5" cy="10.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="6.5" cy="12.5" r="1.2" fill="currentColor" stroke="none"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.65-.44-1.13a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a1 1 0 0 0-3.99-3.99L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
+    <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+    <symbol id="i-pipette" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7"/><path d="M4 10V3"/><path d="M12 21v-9"/><path d="M12 8V3"/><path d="M20 21v-5"/><path d="M20 12V3"/><path d="M2 14h4"/><path d="M10 8h4"/><path d="M18 16h4"/></symbol>
+  </svg>
+
+  <!-- ================= 大廳 ================= -->
+  <section id="lobby" class="lobby">
+    <div class="lobby-card">
+      <div class="brand">
+        <svg class="brand-icon"><use href="#i-palette"/></svg>
+        <div>
+          <h1>線上共同畫板</h1>
+          <p class="muted">輸入房號和朋友一起畫，作品會自動儲存在房間裡</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>你的暱稱</span>
+        <input id="nickname" maxlength="20" autocomplete="nickname" placeholder="例如：小明">
+      </label>
+
+      <div class="segmented" role="tablist">
+        <button type="button" role="tab" class="seg active" data-tab="join">加入房間</button>
+        <button type="button" role="tab" class="seg" data-tab="create">建立房間</button>
+      </div>
+
+      <form id="joinForm" class="tab-panel" data-panel="join" autocomplete="off">
+        <label class="field">
+          <span>房號</span>
+          <input id="joinRoomId" maxlength="20" inputmode="text" placeholder="輸入朋友給你的房號" required>
+        </label>
+        <label class="field">
+          <span>密碼 <small class="muted">（房間沒設密碼可留空）</small></span>
+          <input id="joinPassword" type="password" maxlength="100" placeholder="房間密碼">
+        </label>
+        <button class="btn primary block" type="submit">進入房間</button>
+      </form>
+
+      <form id="createForm" class="tab-panel" data-panel="create" autocomplete="off" hidden>
+        <label class="field">
+          <span>房號 <small class="muted">（留空會自動產生 6 位數）</small></span>
+          <input id="createRoomId" maxlength="20" placeholder="英文、數字、_ 或 -">
+        </label>
+        <label class="field">
+          <span>密碼 <small class="muted">（選填，設定後別人要輸入才能進來）</small></span>
+          <input id="createPassword" type="password" maxlength="100" placeholder="不設密碼可留空" autocomplete="new-password">
+        </label>
+        <button class="btn primary block" type="submit">建立並進入</button>
+      </form>
+
+      <p id="lobbyError" class="error" role="alert" hidden></p>
+
+      <div id="recentWrap" class="recent" hidden>
+        <span class="muted">最近的房間</span>
+        <div id="recentRooms" class="chips"></div>
+      </div>
+
+      <p id="lobbyStatus" class="lobby-status muted"></p>
+    </div>
+  </section>
+
+  <!-- ================= 房間 ================= -->
+  <section id="room" class="room" hidden>
+    <header class="topbar">
+      <button id="leaveBtn" class="btn ghost" title="離開房間"><svg class="icon"><use href="#i-logout"/></svg><span class="hide-sm">離開</span></button>
+      <div class="room-title">
+        <span class="muted hide-sm">房號</span>
+        <strong id="roomIdLabel"></strong>
+        <svg id="lockIcon" class="icon lock" hidden><use href="#i-lock"/></svg>
+      </div>
+      <div class="topbar-actions">
+        <button id="copyLinkBtn" class="btn ghost" title="複製邀請連結"><svg class="icon"><use href="#i-link"/></svg><span class="hide-sm">邀請</span></button>
+        <button id="passwordBtn" class="btn ghost" title="設定房間密碼"><svg class="icon"><use href="#i-lock"/></svg><span class="hide-sm">密碼</span></button>
+        <div class="users" tabindex="0" title="在線上的人">
+          <svg class="icon"><use href="#i-users"/></svg>
+          <span id="userCount">1</span>
+          <div id="userList" class="user-list"></div>
+        </div>
+        <span id="connDot" class="conn-dot" title="連線狀態"></span>
+        <button id="toolsToggle" class="btn ghost show-sm" title="工具"><svg class="icon"><use href="#i-sliders"/></svg></button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside id="toolbar" class="toolbar">
+        <section class="panel">
+          <div class="panel-title">工具</div>
+          <div class="tool-row">
+            <button class="tool active" data-tool="pen" title="畫筆 (B)"><svg class="icon"><use href="#i-pencil"/></svg><span>畫筆</span></button>
+            <button class="tool" data-tool="eraser" title="橡皮擦 (E)"><svg class="icon"><use href="#i-eraser"/></svg><span>橡皮擦</span></button>
+            <button class="tool" data-tool="picker" title="滴管：從畫布取色 (I)"><svg class="icon"><use href="#i-pipette"/></svg><span>滴管</span></button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">筆刷 <span id="brushPreview" class="brush-preview"><i></i></span></div>
+          <label class="slider-row">
+            <span>粗細</span>
+            <input id="sizeRange" type="range" min="1" max="100" value="6">
+            <output id="sizeOut">6</output>
+          </label>
+          <label class="slider-row">
+            <span>不透明</span>
+            <input id="opacityRange" type="range" min="5" max="100" value="100">
+            <output id="opacityOut">100%</output>
+          </label>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">顏色</div>
+          <div id="colorPicker"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">圖片與畫布</div>
+          <div class="action-grid">
+            <button id="undoBtn" class="btn" title="復原自己上一筆 (Ctrl+Z)"><svg class="icon"><use href="#i-undo"/></svg>復原</button>
+            <button id="uploadBtn" class="btn" title="上傳圖片（也可以拖曳或貼上）"><svg class="icon"><use href="#i-image"/></svg>上傳圖片</button>
+            <button id="downloadBtn" class="btn" title="下載整張圖 (PNG)"><svg class="icon"><use href="#i-download"/></svg>下載 PNG</button>
+            <button id="clearBtn" class="btn danger" title="清空整張畫布"><svg class="icon"><use href="#i-trash"/></svg>清空</button>
+          </div>
+          <input id="fileInput" type="file" accept="image/*" hidden>
+          <p class="hint muted">提示：可以直接把圖片拖到畫布上，或按 Ctrl+V 貼上。</p>
+        </section>
+      </aside>
+
+      <main id="stage" class="stage">
+        <div id="placeBar" class="place-bar" hidden>
+          <span class="hide-sm">拖曳移動、拉右下角縮放</span>
+          <button id="placeFitBtn" class="btn">符合畫布</button>
+          <button id="placeCancelBtn" class="btn">取消</button>
+          <button id="placeOkBtn" class="btn primary">放上畫布</button>
+        </div>
+        <div id="offlineOverlay" class="stage-overlay" hidden>
+          <div class="overlay-card"><span class="spinner"></span>連線中斷，正在重新連線…</div>
+        </div>
+      </main>
+    </div>
+  </section>
+
+  <!-- 設定密碼 -->
+  <dialog id="passwordDialog" class="dialog">
+    <form method="dialog">
+      <h3>房間密碼</h3>
+      <p class="muted">設定後，之後要進入這個房間的人都需要輸入密碼。已經在房間裡的人不受影響。<br>留空並儲存＝取消密碼。</p>
+      <input id="newPassword" type="password" maxlength="100" placeholder="新密碼（留空 = 不設密碼）" autocomplete="new-password">
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-close>取消</button>
+        <button value="ok" class="btn primary">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 確認 -->
+  <dialog id="confirmDialog" class="dialog">
+    <form method="dialog">
+      <h3 id="confirmTitle"></h3>
+      <p id="confirmText" class="muted"></p>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn">取消</button>
+        <button value="ok" class="btn danger-solid">確定</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="/socket.io/socket.io.min.js"></script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

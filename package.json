@@ -1,0 +1,19 @@
+{
+  "name": "painting-online",
+  "version": "1.0.0",
+  "description": "線上多人共同畫板：房號＋密碼、即時同步、上傳圖片、下載作品",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0",
+    "socket.io": "^4.8.1"
+  }
+}

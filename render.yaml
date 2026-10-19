@@ -1,0 +1,15 @@
+# Render 一鍵部署設定（Blueprint）
+# 在 Render 選 New → Blueprint，連到這個 GitHub repo 就會自動建立網站
+services:
+  - type: web
+    name: painting-online
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: MONGODB_URI # 部署時 Render 會請你貼上 MongoDB Atlas 的連線字串
+        sync: false
+      - key: ROOM_TTL_DAYS
+        value: "30"
