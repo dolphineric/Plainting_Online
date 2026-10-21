@@ -177,10 +177,11 @@ export class Board {
       },
       { passive: false }
     );
-    // 中鍵按下時不要出現瀏覽器的自動捲動
+    // 中鍵按下時不要出現瀏覽器的自動捲動；右鍵拿來移動畫面，所以不要跳出右鍵選單
     stage.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault());
+    stage.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // 用 capture 先攔下：中鍵、空白鍵＋左鍵、在畫布外的灰色區域拖曳 → 移動畫面；兩指 → 縮放
+    // 用 capture 先攔下：右鍵、中鍵、空白鍵＋左鍵、在畫布外的灰色區域拖曳 → 移動畫面；兩指 → 縮放
     stage.addEventListener(
       'pointerdown',
       (e) => {
@@ -194,7 +195,7 @@ export class Board {
           }
           if (this.pinch) return e.stopPropagation(); // 兩指縮放後剩下的手指不要畫
         }
-        const wantPan = e.button === 1 || (e.button === 0 && (this.panKey || !this.el.contains(e.target)));
+        const wantPan = e.button === 1 || e.button === 2 || (e.button === 0 && (this.panKey || !this.el.contains(e.target)));
         if (!wantPan) return;
         e.preventDefault();
         e.stopPropagation();
