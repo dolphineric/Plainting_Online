@@ -16,6 +16,7 @@ const CANVAS = { width: 1920, height: 1080 };
 const MAX_IMAGE_CHARS = 8 * 1024 * 1024; // 圖片 dataURL 長度上限（約 6MB 的圖檔）
 const MAX_STROKE_NUMBERS = 20000; // 單一筆畫最多的座標數（x、y 各算一個）
 const MAX_NUMBERS_PER_MOVE = 4000;
+const MAX_REDO = 100; // 每人最多能「下一步」幾次
 const ROOM_ID_RE = /^[a-z0-9_-]{1,20}$/;
 const OP_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{8,40}$/;
@@ -61,11 +62,24 @@ function newRoom({ id, passwordHash = null, createdAt = Date.now(), updatedAt = 
     passwordHash,
     createdAt,
     updatedAt,
-    ops, // 已完成的筆畫與圖片（依順序重播就是整張畫）
+    ops, // 已完成的筆畫與圖片（依 seq 順序重播就是整張畫）
+    nextSeq: normalizeSeq(ops),
     pending: new Map(), // opId -> { op, socketId }，正在畫、還沒放開滑鼠的筆畫
+    redo: new Map(), // clientId -> 被復原的操作，可以「下一步」放回去（只存在記憶體）
     users: new Map(), // socketId -> { id, name }
     unloadTimer: null,
   };
+}
+
+// 每個操作都有遞增的序號 seq，「下一步」時依序號放回原本的圖層位置。
+// 舊資料沒有序號就依現有順序補上。回傳下一個可用的序號。
+function normalizeSeq(ops) {
+  let next = 0;
+  for (const op of ops) {
+    if (!Number.isInteger(op.seq) || op.seq < next) op.seq = next;
+    next = op.seq + 1;
+  }
+  return next;
 }
 
 async function getRoom(id) {
@@ -128,7 +142,9 @@ function sanitizeImage(s, uid) {
   if (typeof s.src !== 'string' || s.src.length > MAX_IMAGE_CHARS || !IMAGE_RE.test(s.src)) return null;
   const [x, y, w, h] = [s.x, s.y, s.w, s.h].map(Number);
   if (![x, y, w, h].every(Number.isFinite) || w < 1 || h < 1 || w > 20000 || h > 20000) return null;
-  return { id: String(s.id), uid, type: 'image', src: s.src, x: clamp(x, -20000, 20000), y: clamp(y, -20000, 20000), w, h };
+  // background = 放在最底層的背景圖，橡皮擦擦不掉，擦掉上面的筆畫時會露出來
+  const type = s.type === 'background' ? 'background' : 'image';
+  return { id: String(s.id), uid, type, src: s.src, x: clamp(x, -20000, 20000), y: clamp(y, -20000, 20000), w, h };
 }
 
 // ---------- 房間操作 ----------
@@ -149,9 +165,22 @@ function broadcastUsers(room) {
 }
 
 function addOp(room, op) {
+  op.seq = room.nextSeq++;
   room.ops.push(op);
+  room.redo.delete(op.uid); // 畫了新東西，之前復原的就不能再「下一步」
   room.updatedAt = Date.now();
   store.addOp(room, op);
+}
+
+// 告訴這個使用者（可能開了多個連線）「上一步／下一步」按鈕能不能按
+function emitHistory(room, uid) {
+  const state = {
+    canUndo: room.ops.findLastIndex((op) => op.uid === uid) !== -1,
+    canRedo: !!room.redo.get(uid)?.length,
+  };
+  for (const [socketId, user] of room.users) {
+    if (user.id === uid) io.to(socketId).emit('history', state);
+  }
 }
 
 function commitStroke(room, opId) {
@@ -159,7 +188,9 @@ function commitStroke(room, opId) {
   if (!entry) return;
   room.pending.delete(opId);
   addOp(room, entry.op);
-  io.to(room.id).except(entry.socketId).emit('stroke:end', { id: opId });
+  // 畫的人也會收到，用來補上伺服器給的序號
+  io.to(room.id).emit('stroke:end', { id: opId, seq: entry.op.seq });
+  emitHistory(room, entry.op.uid);
 }
 
 function enterRoom(socket, room, payload) {
@@ -181,6 +212,7 @@ function enterRoom(socket, room, payload) {
   socket.join(room.id);
   socket.to(room.id).emit('user:joined', { name: socket.data.name });
   broadcastUsers(room);
+  emitHistory(room, clientId);
   return room;
 }
 
@@ -329,29 +361,52 @@ io.on('connection', (socket) => {
     addOp(room, op);
     socket.to(room.id).emit('op:add', op);
     reply({ ok: true, op });
+    emitHistory(room, op.uid);
   });
 
-  // 復原：移除「自己」最後一個筆畫或圖片
+  // 上一步：移除「自己」最後一個筆畫或圖片，放進可以「下一步」的堆疊
   socket.on('op:undo', () => {
     const room = currentRoom(socket);
     if (!room) return;
-    for (let i = room.ops.length - 1; i >= 0; i--) {
-      if (room.ops[i].uid !== socket.data.clientId) continue;
-      const [op] = room.ops.splice(i, 1);
-      room.updatedAt = Date.now();
-      store.removeOp(room, op.id);
-      io.to(room.id).emit('op:remove', { id: op.id });
-      return;
-    }
+    const uid = socket.data.clientId;
+    const i = room.ops.findLastIndex((op) => op.uid === uid);
+    if (i === -1) return;
+    const [op] = room.ops.splice(i, 1);
+    const stack = room.redo.get(uid) || [];
+    stack.push(op);
+    if (stack.length > MAX_REDO) stack.shift();
+    room.redo.set(uid, stack);
+    room.updatedAt = Date.now();
+    store.removeOp(room, op.id);
+    io.to(room.id).emit('op:remove', { id: op.id });
+    emitHistory(room, uid);
+  });
+
+  // 下一步：把最近一次「上一步」移除的東西放回原本的圖層位置
+  socket.on('op:redo', () => {
+    const room = currentRoom(socket);
+    if (!room) return;
+    const uid = socket.data.clientId;
+    const op = room.redo.get(uid)?.pop();
+    if (!op) return;
+    let i = room.ops.length;
+    while (i > 0 && room.ops[i - 1].seq > op.seq) i--;
+    room.ops.splice(i, 0, op);
+    room.updatedAt = Date.now();
+    store.insertOp(room, op);
+    io.to(room.id).emit('op:insert', op);
+    emitHistory(room, uid);
   });
 
   socket.on('canvas:clear', () => {
     const room = currentRoom(socket);
     if (!room) return;
     room.ops = [];
+    room.redo.clear();
     room.updatedAt = Date.now();
     store.clearOps(room);
     io.to(room.id).emit('canvas:clear', { by: socket.data.name });
+    io.to(room.id).emit('history', { canUndo: false, canRedo: false });
   });
 
   socket.on('disconnect', () => leaveRoom(socket));

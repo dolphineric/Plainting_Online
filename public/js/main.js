@@ -23,6 +23,7 @@ const state = {
   board: null,
   picker: null,
   users: [],
+  history: { canUndo: false, canRedo: false }, // 伺服器告知「上一步／下一步」能不能按
 };
 
 // ====================== 大廳 ======================
@@ -180,6 +181,8 @@ function leaveRoom(message) {
   state.board?.load([]);
   state.roomId = null;
   state.password = '';
+  state.history = { canUndo: false, canRedo: false };
+  renderHistory();
   history.replaceState(null, '', location.pathname);
   document.title = '線上共同畫板';
   $('#room').hidden = true;
@@ -260,6 +263,12 @@ function updateBrushPreview() {
 }
 
 $('#undoBtn').addEventListener('click', () => socket.emit('op:undo'));
+$('#redoBtn').addEventListener('click', () => socket.emit('op:redo'));
+
+function renderHistory() {
+  $('#undoBtn').disabled = !(socket.connected && state.history.canUndo);
+  $('#redoBtn').disabled = !(socket.connected && state.history.canRedo);
+}
 
 $('#clearBtn').addEventListener('click', async () => {
   const ok = await confirmDialog('清空整張畫布？', '房間裡所有人的筆畫和圖片都會被刪除，而且無法復原。建議先下載備份。');
@@ -405,21 +414,23 @@ async function addImageFile(file) {
     const src = await compressImage(file);
     const img = await loadImage(src);
     $('#placeBar').hidden = false;
-    const rect = await state.board.placeImage(img);
+    const placed = await state.board.placeImage(img);
     $('#placeBar').hidden = true;
-    if (!rect) return;
+    if (!placed) return;
 
     toast('圖片上傳中…');
-    const res = await request('image:add', { id: uid(), src, ...rect }, 120000);
+    const res = await request('image:add', { id: uid(), src, ...placed }, 120000);
     if (!res.ok) return toast(res.error, 'error');
     state.board.addOp(res.op);
+    if (res.op.type === 'background') toast('已設為背景，用橡皮擦擦掉筆畫會露出背景', 'success');
   } catch (err) {
     $('#placeBar').hidden = true;
     toast(err.message || '圖片處理失敗', 'error');
   }
 }
 
-$('#placeOkBtn').addEventListener('click', () => state.board.finishPlacing(true));
+$('#placeOkBtn').addEventListener('click', () => state.board.finishPlacing('image'));
+$('#placeBgBtn').addEventListener('click', () => state.board.finishPlacing('background'));
 $('#placeCancelBtn').addEventListener('click', () => state.board.finishPlacing(false));
 $('#placeFitBtn').addEventListener('click', () => state.board.fitPlacing());
 
@@ -430,17 +441,18 @@ document.addEventListener('keydown', (e) => {
   const board = state.board;
 
   if (board.placing) {
-    if (e.key === 'Enter') board.finishPlacing(true);
+    if (e.key === 'Enter') board.finishPlacing('image');
     if (e.key === 'Escape') board.finishPlacing(false);
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+  const key = e.key.toLowerCase();
+  // Ctrl+Z 上一步；Ctrl+Y 或 Ctrl+Shift+Z 下一步
+  if ((e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y')) {
     e.preventDefault();
-    socket.emit('op:undo');
+    socket.emit(key === 'y' || e.shiftKey ? 'op:redo' : 'op:undo');
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
-  const key = e.key.toLowerCase();
   if (key === 'b' || key === 'p') selectTool('pen');
   else if (key === 'e') selectTool('eraser');
   else if (key === 'i') selectTool('picker');
@@ -456,6 +468,7 @@ function setConnection(online) {
   $('#connDot').title = online ? '已連線' : '連線中斷';
   $('#offlineOverlay').hidden = online || !state.roomId;
   state.board?.setEnabled(online);
+  renderHistory();
   $('#lobbyStatus').textContent = online
     ? '● 已連線到伺服器'
     : '正在連線伺服器…（免費主機閒置後第一次開啟，可能需要等 30～60 秒喚醒）';
@@ -480,9 +493,14 @@ socket.on('user:joined', ({ name }) => toast(`${name} 加入了房間`));
 socket.on('user:left', ({ name }) => toast(`${name} 離開了房間`));
 socket.on('stroke:begin', (op) => state.board?.remoteBegin(op));
 socket.on('stroke:move', ({ id, pts }) => state.board?.remoteMove(id, pts));
-socket.on('stroke:end', ({ id }) => state.board?.remoteEnd(id));
+socket.on('stroke:end', ({ id, seq }) => state.board?.remoteEnd(id, seq));
 socket.on('op:add', (op) => state.board?.addOp(op));
+socket.on('op:insert', (op) => state.board?.insertOp(op));
 socket.on('op:remove', ({ id }) => state.board?.removeOp(id));
+socket.on('history', (h) => {
+  state.history = h;
+  renderHistory();
+});
 socket.on('canvas:clear', ({ by }) => {
   state.board?.clear();
   toast(`${by} 清空了畫布`);

@@ -15,6 +15,7 @@
     <symbol id="i-eraser" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
     <symbol id="i-pipette" viewBox="0 0 24 24"><path d="m2 22 1-1h3l9-9"/><path d="M3 21v-3l9-9"/><path d="m15 6 3.4-3.4a2.1 2.1 0 1 1 3 3L18 9l.4.4a2.1 2.1 0 1 1-3 3l-3.8-3.8a2.1 2.1 0 1 1 3-3l.4.4Z"/></symbol>
     <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></symbol>
     <symbol id="i-image" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
@@ -137,10 +138,11 @@
         <section class="panel">
           <div class="panel-title">圖片與畫布</div>
           <div class="action-grid">
-            <button id="undoBtn" class="btn" title="復原自己上一筆 (Ctrl+Z)"><svg class="icon"><use href="#i-undo"/></svg>復原</button>
+            <button id="undoBtn" class="btn" title="上一步：復原自己上一個動作 (Ctrl+Z)" disabled><svg class="icon"><use href="#i-undo"/></svg>上一步</button>
+            <button id="redoBtn" class="btn" title="下一步：把剛剛復原的放回來 (Ctrl+Y)" disabled><svg class="icon"><use href="#i-redo"/></svg>下一步</button>
             <button id="uploadBtn" class="btn" title="上傳圖片（也可以拖曳或貼上）"><svg class="icon"><use href="#i-image"/></svg>上傳圖片</button>
             <button id="downloadBtn" class="btn" title="下載整張圖 (PNG)"><svg class="icon"><use href="#i-download"/></svg>下載 PNG</button>
-            <button id="clearBtn" class="btn danger" title="清空整張畫布"><svg class="icon"><use href="#i-trash"/></svg>清空</button>
+            <button id="clearBtn" class="btn danger wide" title="清空整張畫布"><svg class="icon"><use href="#i-trash"/></svg>清空畫布</button>
           </div>
           <input id="fileInput" type="file" accept="image/*" hidden>
           <p class="hint muted">提示：可以直接把圖片拖到畫布上，或按 Ctrl+V 貼上。</p>
@@ -152,6 +154,7 @@
           <span class="hide-sm">拖曳移動、拉右下角縮放</span>
           <button id="placeFitBtn" class="btn">符合畫布</button>
           <button id="placeCancelBtn" class="btn">取消</button>
+          <button id="placeBgBtn" class="btn" title="放在最底層並符合畫布大小；橡皮擦擦掉筆畫時會露出背景">設為背景</button>
           <button id="placeOkBtn" class="btn primary">放上畫布</button>
         </div>
         <div id="offlineOverlay" class="stage-overlay" hidden>

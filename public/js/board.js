@@ -30,8 +30,9 @@ export function drawStroke(ctx, op) {
   ctx.restore();
 }
 
-// 畫布：
-//  main 圖層 = 已完成的筆畫與圖片（依序重播 ops）
+// 畫布（由下到上）：
+//  bg   圖層 = 背景圖（最後一個 background 操作），橡皮擦擦不到
+//  main 圖層 = 已完成的筆畫與圖片（依序重播 ops），橡皮擦擦掉的地方會露出 bg
 //  live 圖層 = 還在畫的筆畫（自己的和別人的），放開後才「定稿」到 main
 export class Board {
   constructor(stage, { width, height, onStrokeStart, onStrokeMove, onStrokeEnd, onPick }) {
@@ -42,12 +43,14 @@ export class Board {
 
     this.el = document.createElement('div');
     this.el.className = 'board';
+    this.bg = this.makeCanvas('bg');
     this.main = this.makeCanvas('main');
     this.live = this.makeCanvas('live');
     this.cursor = document.createElement('div');
     this.cursor.className = 'brush-cursor';
-    this.el.append(this.main, this.live, this.cursor);
+    this.el.append(this.bg, this.main, this.live, this.cursor);
     stage.append(this.el);
+    this.bgCtx = this.bg.getContext('2d');
     this.mainCtx = this.main.getContext('2d');
     this.liveCtx = this.live.getContext('2d');
 
@@ -129,7 +132,17 @@ export class Board {
 
   addOp(op) {
     this.ops.push(op);
-    this.drawOp(this.mainCtx, op);
+    if (op.type === 'background') this.needFull = true;
+    else this.drawOp(this.mainCtx, op);
+    this.schedule();
+  }
+
+  // 下一步：依序號放回原本的圖層位置（還沒拿到序號的筆畫是最新的，排在最後）
+  insertOp(op) {
+    let i = this.ops.length;
+    while (i > 0 && (this.ops[i - 1].seq ?? Infinity) > op.seq) i--;
+    this.ops.splice(i, 0, op);
+    this.needFull = true;
     this.schedule();
   }
 
@@ -161,11 +174,19 @@ export class Board {
     this.schedule();
   }
 
-  remoteEnd(id) {
-    this.commitLive(id);
+  remoteEnd(id, seq) {
+    const live = this.liveStrokes.get(id);
+    if (live) {
+      live.seq = seq;
+      this.commitLive(id);
+      return;
+    }
+    // 自己畫的筆畫放開時就已經定稿了，這裡只補上伺服器給的序號
+    const own = this.ops.findLast((op) => op.id === id);
+    if (own) own.seq = seq;
   }
 
-  // 匯出：白底 + 畫布內容
+  // 匯出：白底 + 背景 + 畫布內容
   exportBlob() {
     const c = document.createElement('canvas');
     c.width = this.width;
@@ -173,6 +194,7 @@ export class Board {
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(this.bg, 0, 0);
     ctx.drawImage(this.main, 0, 0);
     return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
   }
@@ -187,6 +209,9 @@ export class Board {
     if (this.drawing?.outbox.length) this.flushOutbox();
     if (this.needFull) {
       this.needFull = false;
+      this.bgCtx.clearRect(0, 0, this.width, this.height);
+      const bg = this.ops.findLast((op) => op.type === 'background');
+      if (bg) this.drawImageOp(this.bgCtx, bg);
       this.mainCtx.clearRect(0, 0, this.width, this.height);
       for (const op of this.ops) this.drawOp(this.mainCtx, op);
     }
@@ -197,13 +222,15 @@ export class Board {
     }
   }
 
+  // 背景（background）不畫在 main，而是在重繪時畫到 bg 圖層
   drawOp(ctx, op) {
-    if (op.type === 'stroke') {
-      drawStroke(ctx, op);
-    } else if (op.type === 'image') {
-      const img = this.getImage(op);
-      if (img.complete && img.naturalWidth) ctx.drawImage(img, op.x, op.y, op.w, op.h);
-    }
+    if (op.type === 'stroke') drawStroke(ctx, op);
+    else if (op.type === 'image') this.drawImageOp(ctx, op);
+  }
+
+  drawImageOp(ctx, op) {
+    const img = this.getImage(op);
+    if (img.complete && img.naturalWidth) ctx.drawImage(img, op.x, op.y, op.w, op.h);
   }
 
   getImage(op) {
@@ -310,10 +337,14 @@ export class Board {
   pickColor(x, y) {
     const px = clamp(Math.floor(x), 0, this.width - 1);
     const py = clamp(Math.floor(y), 0, this.height - 1);
-    const [r, g, b, a] = this.mainCtx.getImageData(px, py, 1, 1).data;
-    const alpha = a / 255;
-    const mix = (c) => c * alpha + 255 * (1 - alpha); // 透明處視為白底
-    return rgbToHex({ r: mix(r), g: mix(g), b: mix(b) });
+    // 取「白底 → 背景 → 畫布」疊起來後看到的顏色
+    let color = [255, 255, 255];
+    for (const ctx of [this.bgCtx, this.mainCtx]) {
+      const [r, g, b, a] = ctx.getImageData(px, py, 1, 1).data;
+      const alpha = a / 255;
+      color = [r, g, b].map((c, i) => c * alpha + color[i] * (1 - alpha));
+    }
+    return rgbToHex({ r: color[0], g: color[1], b: color[2] });
   }
 
   // 圓形筆刷游標（滑鼠才顯示，觸控不需要）
@@ -334,7 +365,8 @@ export class Board {
   }
 
   // ---------- 擺放上傳的圖片 ----------
-  // 回傳 Promise：確定 → {x, y, w, h}（畫布座標）；取消 → null
+  // 回傳 Promise：放上畫布 → {type: 'image', x, y, w, h}（畫布座標）
+  //              設為背景 → {type: 'background', ...}（自動符合畫布大小）；取消 → null
   placeImage(img) {
     this.finishPlacing(false);
     const aspect = img.naturalWidth / img.naturalHeight;
@@ -399,10 +431,11 @@ export class Board {
           st.y = (this.height - st.h) / 2;
           apply();
         },
-        done: (ok) => {
+        done: (mode) => {
+          if (mode === 'background') this.placing.fit();
           box.remove();
           this.placing = null;
-          resolve(ok ? { x: round1(st.x), y: round1(st.y), w: round1(st.w), h: round1(st.h) } : null);
+          resolve(mode ? { type: mode, x: round1(st.x), y: round1(st.y), w: round1(st.w), h: round1(st.h) } : null);
         },
       };
     });
@@ -412,7 +445,8 @@ export class Board {
     this.placing?.fit();
   }
 
-  finishPlacing(ok) {
-    this.placing?.done(ok);
+  // mode：'image' 放上畫布、'background' 設為背景、false 取消
+  finishPlacing(mode) {
+    this.placing?.done(mode);
   }
 }

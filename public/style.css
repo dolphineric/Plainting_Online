@@ -162,6 +162,8 @@ input[type=range] { accent-color: var(--accent); width: 100%; margin: 0; }
 
 .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .action-grid .btn { font-size: 13px; padding: 0 8px; }
+.action-grid .btn:disabled { opacity: .4; cursor: default; background: #fff; transform: none; }
+.action-grid .wide { grid-column: 1 / -1; }
 .hint { font-size: 12px; margin: 10px 0 0; line-height: 1.5; }
 
 /* ---------- 色盤 ---------- */
@@ -225,6 +227,7 @@ input[type=range] { accent-color: var(--accent); width: 100%; margin: 0; }
   touch-action: none; user-select: none; -webkit-user-select: none;
 }
 .layer { position: absolute; inset: 0; width: 100%; height: 100%; display: block; border-radius: 4px; }
+.layer.bg, .layer.main { pointer-events: none; }
 .layer.live { cursor: none; touch-action: none; }
 .board[data-tool="picker"] .layer.live { cursor: crosshair; }
 .brush-cursor {

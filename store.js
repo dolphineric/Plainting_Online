@@ -82,6 +82,10 @@ class FileStore {
     this.schedule(room);
   }
 
+  insertOp(room) {
+    this.schedule(room);
+  }
+
   removeOp(room) {
     this.schedule(room);
   }
@@ -148,14 +152,13 @@ class FileStore {
 
 // ---------- MongoDB ----------
 // rooms 集合：每個房間一筆（房號、密碼雜湊、時間）
-// ops   集合：每一筆畫或每張圖片一筆，依 seq 排序重播
+// ops   集合：每一筆畫或每張圖片一筆，依 seq（伺服器給的序號）排序重播
 class MongoStore {
   constructor(uri, dbName) {
     this.uri = uri;
     this.dbName = dbName;
     this.kind = 'MongoDB';
     this.queue = new SerialQueue();
-    this.seq = new Map(); // roomId -> 下一個序號
     this.touchedAt = new Map(); // roomId -> 上次更新 updatedAt 的時間
   }
 
@@ -178,15 +181,13 @@ class MongoStore {
     const meta = await this.rooms.findOne({ _id: id });
     if (!meta) return null;
     const docs = await this.ops.find({ roomId: id }, { projection: { seq: 1, op: 1 } }).sort({ seq: 1 }).toArray();
-    this.seq.set(id, docs.length ? docs[docs.length - 1].seq + 1 : 0);
     return {
       meta: { id, passwordHash: meta.passwordHash || null, createdAt: meta.createdAt, updatedAt: meta.updatedAt },
-      ops: docs.map((d) => d.op),
+      ops: docs.map((d) => ({ ...d.op, seq: d.seq })),
     };
   }
 
   createRoom(room) {
-    this.seq.set(room.id, 0);
     return this.queue.run(room.id, () =>
       this.rooms.insertOne({
         _id: room.id,
@@ -205,10 +206,13 @@ class MongoStore {
   }
 
   addOp(room, op) {
-    const seq = this.seq.get(room.id) ?? 0;
-    this.seq.set(room.id, seq + 1);
-    this.queue.run(room.id, () => this.ops.insertOne({ roomId: room.id, seq, id: op.id, op }));
+    this.queue.run(room.id, () => this.ops.insertOne({ roomId: room.id, seq: op.seq, id: op.id, op }));
     this.touch(room);
+  }
+
+  // 「下一步」放回的操作保留原本的 seq，載入時自然排回原位
+  insertOp(room, op) {
+    this.addOp(room, op);
   }
 
   removeOp(room, opId) {
