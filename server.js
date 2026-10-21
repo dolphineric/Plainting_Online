@@ -352,6 +352,15 @@ io.on('connection', (socket) => {
     commitStroke(room, entry.op.id);
   });
 
+  // 手機兩指縮放時，第一隻手指剛開始的筆畫要丟掉
+  socket.on('stroke:cancel', (payload) => {
+    const room = currentRoom(socket);
+    const entry = room && payload && room.pending.get(String(payload.id));
+    if (!entry || entry.socketId !== socket.id) return;
+    room.pending.delete(entry.op.id);
+    socket.to(room.id).emit('stroke:cancel', { id: entry.op.id });
+  });
+
   socket.on('image:add', (payload, ack) => {
     const reply = toAck(ack);
     const room = currentRoom(socket);

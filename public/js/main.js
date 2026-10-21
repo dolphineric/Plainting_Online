@@ -134,6 +134,8 @@ function ensureBoard(width, height) {
     },
     onStrokeMove: (id, pts) => socket.emit('stroke:move', { id, pts }),
     onStrokeEnd: (op) => socket.emit('stroke:end', { id: op.id }),
+    onStrokeCancel: (op) => socket.emit('stroke:cancel', { id: op.id }),
+    onZoom: (zoom) => ($('#zoomPct').textContent = `${Math.round(zoom * 100)}%`),
     onPick: (hex) => {
       state.picker.setColor(hex);
       selectTool('pen');
@@ -179,6 +181,7 @@ function leaveRoom(message) {
   socket.emit('room:leave');
   state.board?.finishPlacing(false);
   state.board?.load([]);
+  state.board?.resetView();
   state.roomId = null;
   state.password = '';
   state.history = { canUndo: false, canRedo: false };
@@ -429,6 +432,11 @@ async function addImageFile(file) {
   }
 }
 
+// ---------- 縮放 ----------
+$('#zoomInBtn').addEventListener('click', () => state.board.zoomTo(state.board.zoom * 1.25));
+$('#zoomOutBtn').addEventListener('click', () => state.board.zoomTo(state.board.zoom / 1.25));
+$('#zoomPct').addEventListener('click', () => state.board.resetView());
+
 $('#placeOkBtn').addEventListener('click', () => state.board.finishPlacing('image'));
 $('#placeBgBtn').addEventListener('click', () => state.board.finishPlacing('background'));
 $('#placeCancelBtn').addEventListener('click', () => state.board.finishPlacing(false));
@@ -440,6 +448,12 @@ document.addEventListener('keydown', (e) => {
   if (e.target.closest('input, textarea')) return;
   const board = state.board;
 
+  // 按住空白鍵拖曳 = 移動畫面（也避免空白鍵去按到目前有焦點的按鈕）
+  if (e.code === 'Space') {
+    e.preventDefault();
+    if (!e.repeat) board.setPanKey(true);
+    return;
+  }
   if (board.placing) {
     if (e.key === 'Enter') board.finishPlacing('image');
     if (e.key === 'Escape') board.finishPlacing(false);
@@ -459,8 +473,14 @@ document.addEventListener('keydown', (e) => {
   else if (key === '[' || key === ']') {
     sizeRange.value = Number(sizeRange.value) + (key === ']' ? 2 : -2);
     applyBrushInputs();
-  }
+  } else if (key === '+' || key === '=') board.zoomTo(board.zoom * 1.25);
+  else if (key === '-') board.zoomTo(board.zoom / 1.25);
+  else if (key === '0') board.resetView();
 });
+document.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') state.board?.setPanKey(false);
+});
+window.addEventListener('blur', () => state.board?.setPanKey(false));
 
 // ====================== 連線事件 ======================
 function setConnection(online) {
@@ -494,6 +514,7 @@ socket.on('user:left', ({ name }) => toast(`${name} 離開了房間`));
 socket.on('stroke:begin', (op) => state.board?.remoteBegin(op));
 socket.on('stroke:move', ({ id, pts }) => state.board?.remoteMove(id, pts));
 socket.on('stroke:end', ({ id, seq }) => state.board?.remoteEnd(id, seq));
+socket.on('stroke:cancel', ({ id }) => state.board?.remoteCancel(id));
 socket.on('op:add', (op) => state.board?.addOp(op));
 socket.on('op:insert', (op) => state.board?.insertOp(op));
 socket.on('op:remove', ({ id }) => state.board?.removeOp(id));

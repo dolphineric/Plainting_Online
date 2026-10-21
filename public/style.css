@@ -215,14 +215,16 @@ input[type=range] { accent-color: var(--accent); width: 100%; margin: 0; }
 
 /* ---------- 畫布區 ---------- */
 .stage {
-  position: relative; overflow: hidden; display: grid; place-items: center; min-height: 0;
+  position: relative; overflow: hidden; min-height: 0; touch-action: none;
   background-color: #e8e5de;
   background-image: radial-gradient(rgba(0,0,0,.09) 1px, transparent 1px);
   background-size: 18px 18px;
 }
 .stage.dragover { box-shadow: inset 0 0 0 3px var(--accent); background-color: var(--accent-tint); }
+.stage.pan-ready, .stage.pan-ready .layer.live { cursor: grab; }
+.stage.panning, .stage.panning * { cursor: grabbing !important; }
 .board {
-  position: relative; background: #fff; border-radius: 4px;
+  position: absolute; left: 0; top: 0; background: #fff; border-radius: 4px;
   box-shadow: 0 2px 6px rgba(0,0,0,.08), 0 12px 32px rgba(0,0,0,.12);
   touch-action: none; user-select: none; -webkit-user-select: none;
 }
@@ -248,6 +250,18 @@ input[type=range] { accent-color: var(--accent); width: 100%; margin: 0; }
   background: #fff; border-radius: 999px; box-shadow: var(--shadow); font-size: 13px; white-space: nowrap;
 }
 .place-bar .btn { height: 34px; border-radius: 999px; }
+
+.zoom-bar {
+  position: absolute; right: 12px; bottom: 12px; z-index: 10;
+  display: flex; align-items: center; padding: 4px;
+  background: #fff; border-radius: 999px; box-shadow: var(--shadow);
+}
+.zoom-bar button {
+  height: 32px; min-width: 32px; padding: 0 8px; border: 0; border-radius: 999px;
+  background: transparent; font-weight: 700; font-size: 16px; line-height: 1;
+}
+.zoom-bar button:hover { background: var(--soft); }
+.zoom-bar .zoom-pct { min-width: 58px; font-size: 13px; font-variant-numeric: tabular-nums; }
 
 .stage-overlay {
   position: absolute; inset: 0; z-index: 15; display: grid; place-items: center;

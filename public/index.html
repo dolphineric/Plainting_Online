@@ -145,7 +145,7 @@
             <button id="clearBtn" class="btn danger wide" title="清空整張畫布"><svg class="icon"><use href="#i-trash"/></svg>清空畫布</button>
           </div>
           <input id="fileInput" type="file" accept="image/*" hidden>
-          <p class="hint muted">提示：可以直接把圖片拖到畫布上，或按 Ctrl+V 貼上。</p>
+          <p class="hint muted">提示：滾輪可以放大縮小畫布，按住空白鍵或滑鼠中鍵拖曳可以移動畫面（手機用兩指）。圖片可以直接拖到畫布上，或按 Ctrl+V 貼上。</p>
         </section>
       </aside>
 
@@ -156,6 +156,11 @@
           <button id="placeCancelBtn" class="btn">取消</button>
           <button id="placeBgBtn" class="btn" title="放在最底層並符合畫布大小；橡皮擦擦掉筆畫時會露出背景">設為背景</button>
           <button id="placeOkBtn" class="btn primary">放上畫布</button>
+        </div>
+        <div class="zoom-bar" title="滾輪縮放；按住空白鍵或滑鼠中鍵拖曳可移動畫面；手機用兩指縮放">
+          <button id="zoomOutBtn" type="button" title="縮小 (-)">−</button>
+          <button id="zoomPct" type="button" class="zoom-pct" title="回到符合畫面 (0)">100%</button>
+          <button id="zoomInBtn" type="button" title="放大 (+)">+</button>
         </div>
         <div id="offlineOverlay" class="stage-overlay" hidden>
           <div class="overlay-card"><span class="spinner"></span>連線中斷，正在重新連線…</div>

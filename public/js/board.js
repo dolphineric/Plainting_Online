@@ -2,6 +2,7 @@ import { clamp, rgbToHex, uid } from './util.js';
 
 const MAX_STROKE_NUMBERS = 19000; // 略低於伺服器上限，超過就自動接成下一筆
 const MAX_NUMBERS_PER_MESSAGE = 4000;
+const MAX_ZOOM = 12; // 最多放大到「符合畫面」的 12 倍
 const round1 = (n) => Math.round(n * 10) / 10;
 
 export function drawStroke(ctx, op) {
@@ -35,11 +36,11 @@ export function drawStroke(ctx, op) {
 //  main 圖層 = 已完成的筆畫與圖片（依序重播 ops），橡皮擦擦掉的地方會露出 bg
 //  live 圖層 = 還在畫的筆畫（自己的和別人的），放開後才「定稿」到 main
 export class Board {
-  constructor(stage, { width, height, onStrokeStart, onStrokeMove, onStrokeEnd, onPick }) {
+  constructor(stage, { width, height, onStrokeStart, onStrokeMove, onStrokeEnd, onStrokeCancel, onPick, onZoom }) {
     this.stage = stage;
     this.width = width;
     this.height = height;
-    this.cb = { onStrokeStart, onStrokeMove, onStrokeEnd, onPick };
+    this.cb = { onStrokeStart, onStrokeMove, onStrokeEnd, onStrokeCancel, onPick, onZoom };
 
     this.el = document.createElement('div');
     this.el.className = 'board';
@@ -64,15 +65,27 @@ export class Board {
     this.color = '#000000';
     this.size = 6;
     this.opacity = 1;
-    this.scale = 1;
     this.needFull = false;
     this.raf = 0;
+
+    // 檢視：scale = 每個畫布像素在螢幕上幾個 CSS 像素 = fitScale × zoom
+    // (ox, oy) = 畫布左上角在 stage 裡的位置
+    this.fitScale = 0;
+    this.zoom = 1;
+    this.scale = 1;
+    this.ox = 0;
+    this.oy = 0;
+    this.pan = null; // 拖曳移動畫面中
+    this.panKey = false; // 按住空白鍵
+    this.touches = new Map(); // pointerId -> {x, y}，用來做兩指縮放
+    this.pinch = null;
 
     this.live.addEventListener('pointerdown', (e) => this.onPointerDown(e));
     this.live.addEventListener('pointermove', (e) => this.onPointerMove(e));
     this.live.addEventListener('pointerup', (e) => this.onPointerUp(e));
     this.live.addEventListener('pointercancel', (e) => this.onPointerUp(e));
     this.live.addEventListener('pointerleave', () => this.cursor.classList.remove('visible'));
+    this.bindView();
     new ResizeObserver(() => this.fit()).observe(stage);
     this.fit();
   }
@@ -85,15 +98,163 @@ export class Board {
     return c;
   }
 
+  // ---------- 縮放與移動畫面 ----------
+  pad() {
+    return window.innerWidth < 820 ? 8 : 24;
+  }
+
+  // 畫面大小改變時重算「符合畫面」的比例，並保持畫面中央看的位置不變
   fit() {
-    const pad = window.innerWidth < 820 ? 8 : 24;
-    const sw = this.stage.clientWidth - pad * 2;
-    const sh = this.stage.clientHeight - pad * 2;
+    const sw = this.stage.clientWidth;
+    const sh = this.stage.clientHeight;
     if (sw <= 0 || sh <= 0) return;
-    this.scale = Math.min(sw / this.width, sh / this.height);
-    this.el.style.width = `${Math.floor(this.width * this.scale)}px`;
-    this.el.style.height = `${Math.floor(this.height * this.scale)}px`;
+    const pad = this.pad();
+    const lx = this.fitScale ? (this.stageW / 2 - this.ox) / this.scale : this.width / 2;
+    const ly = this.fitScale ? (this.stageH / 2 - this.oy) / this.scale : this.height / 2;
+    this.fitScale = Math.max(0.01, Math.min((sw - pad * 2) / this.width, (sh - pad * 2) / this.height));
+    this.scale = this.fitScale * this.zoom;
+    this.stageW = sw;
+    this.stageH = sh;
+    this.ox = sw / 2 - lx * this.scale;
+    this.oy = sh / 2 - ly * this.scale;
+    this.layout();
+  }
+
+  // 以 stage 裡的 (cx, cy) 為中心縮放（預設是畫面正中央）
+  zoomTo(zoom, cx = this.stageW / 2, cy = this.stageH / 2) {
+    zoom = clamp(zoom, 1, MAX_ZOOM);
+    const lx = (cx - this.ox) / this.scale;
+    const ly = (cy - this.oy) / this.scale;
+    this.zoom = zoom;
+    this.scale = this.fitScale * zoom;
+    this.ox = cx - lx * this.scale;
+    this.oy = cy - ly * this.scale;
+    this.layout();
+  }
+
+  resetView() {
+    this.zoom = 1;
+    this.scale = this.fitScale;
+    this.layout(true);
+  }
+
+  // 套用大小與位置；畫布比畫面小時置中，比畫面大時不能拖到完全看不見
+  layout(center = false) {
+    const pad = this.pad();
+    const bw = this.width * this.scale;
+    const bh = this.height * this.scale;
+    const place = (o, size, view) => (center || size + pad * 2 <= view ? (view - size) / 2 : clamp(o, view - size - pad, pad));
+    this.ox = place(this.ox, bw, this.stageW);
+    this.oy = place(this.oy, bh, this.stageH);
+    this.el.style.width = `${bw}px`;
+    this.el.style.height = `${bh}px`;
+    this.el.style.transform = `translate(${this.ox}px, ${this.oy}px)`;
     this.updateCursor();
+    this.cb.onZoom?.(this.zoom);
+  }
+
+  setPanKey(down) {
+    this.panKey = down;
+    this.stage.classList.toggle('pan-ready', down);
+    if (down) this.cursor.classList.remove('visible');
+  }
+
+  stagePoint(e) {
+    const r = this.stage.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+
+  bindView() {
+    const stage = this.stage;
+
+    // 滾輪縮放（觸控板兩指捏合在瀏覽器裡也是 ctrl + 滾輪，一樣適用）
+    stage.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        const step = e.deltaMode === 1 ? 0.05 : 0.0015; // deltaMode 1 = 以「行」為單位（Firefox）
+        this.zoomTo(this.zoom * Math.exp(-e.deltaY * step), ...this.stagePoint(e));
+      },
+      { passive: false }
+    );
+    // 中鍵按下時不要出現瀏覽器的自動捲動
+    stage.addEventListener('mousedown', (e) => e.button === 1 && e.preventDefault());
+
+    // 用 capture 先攔下：中鍵、空白鍵＋左鍵、在畫布外的灰色區域拖曳 → 移動畫面；兩指 → 縮放
+    stage.addEventListener(
+      'pointerdown',
+      (e) => {
+        if (e.target.closest('.place-bar, .zoom-bar, .stage-overlay')) return;
+        if (e.pointerType === 'touch') {
+          this.touches.set(e.pointerId, this.stagePoint(e));
+          if (this.touches.size === 2) {
+            e.stopPropagation();
+            this.startPinch();
+            return;
+          }
+          if (this.pinch) return e.stopPropagation(); // 兩指縮放後剩下的手指不要畫
+        }
+        const wantPan = e.button === 1 || (e.button === 0 && (this.panKey || !this.el.contains(e.target)));
+        if (!wantPan) return;
+        e.preventDefault();
+        e.stopPropagation();
+        stage.setPointerCapture(e.pointerId);
+        this.pan = { id: e.pointerId, x: e.clientX, y: e.clientY, ox: this.ox, oy: this.oy };
+        stage.classList.add('panning');
+      },
+      true
+    );
+
+    stage.addEventListener(
+      'pointermove',
+      (e) => {
+        if (this.touches.has(e.pointerId)) this.touches.set(e.pointerId, this.stagePoint(e));
+        if (this.pinch) {
+          this.movePinch();
+        } else if (this.pan?.id === e.pointerId) {
+          this.ox = this.pan.ox + e.clientX - this.pan.x;
+          this.oy = this.pan.oy + e.clientY - this.pan.y;
+          this.layout();
+        }
+      },
+      true
+    );
+
+    const end = (e) => {
+      this.touches.delete(e.pointerId);
+      if (this.pinch && this.touches.size === 0) this.pinch = null;
+      if (this.pan?.id === e.pointerId) {
+        this.pan = null;
+        stage.classList.remove('panning');
+      }
+    };
+    stage.addEventListener('pointerup', end, true);
+    stage.addEventListener('pointercancel', end, true);
+  }
+
+  startPinch() {
+    this.cancelStroke(); // 第一隻手指剛剛開始的筆畫不算
+    this.pan = null;
+    this.stage.classList.remove('panning');
+    const [a, b] = [...this.touches.values()];
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    this.pinch = {
+      dist: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1,
+      zoom: this.zoom,
+      lx: (mid[0] - this.ox) / this.scale, // 兩指中點下方的畫布座標，縮放時讓它跟著手指走
+      ly: (mid[1] - this.oy) / this.scale,
+    };
+  }
+
+  movePinch() {
+    if (this.touches.size < 2) return;
+    const [a, b] = [...this.touches.values()];
+    const p = this.pinch;
+    this.zoom = clamp((p.zoom * Math.hypot(a[0] - b[0], a[1] - b[1])) / p.dist, 1, MAX_ZOOM);
+    this.scale = this.fitScale * this.zoom;
+    this.ox = (a[0] + b[0]) / 2 - p.lx * this.scale;
+    this.oy = (a[1] + b[1]) / 2 - p.ly * this.scale;
+    this.layout();
   }
 
   // ---------- 對外 API ----------
@@ -327,6 +488,27 @@ export class Board {
     this.cb.onStrokeEnd?.(op);
   }
 
+  // 丟掉正在畫的筆畫（例如手機上第二隻手指放下來要縮放）
+  cancelStroke() {
+    if (!this.drawing) return;
+    const { op } = this.drawing;
+    this.drawing = null;
+    this.dropLive(op.id);
+    this.cb.onStrokeCancel?.(op);
+  }
+
+  remoteCancel(id) {
+    this.dropLive(id);
+  }
+
+  dropLive(id) {
+    const op = this.liveStrokes.get(id);
+    if (!op) return;
+    this.liveStrokes.delete(id);
+    if (op.tool === 'eraser') this.needFull = true; // 橡皮擦是直接擦在 main 上的，要重畫復原
+    this.schedule();
+  }
+
   flushOutbox() {
     const d = this.drawing;
     while (d.outbox.length) {
@@ -349,7 +531,7 @@ export class Board {
 
   // 圓形筆刷游標（滑鼠才顯示，觸控不需要）
   moveCursor(e) {
-    if (e.pointerType === 'touch' || this.tool === 'picker' || !this.enabled) {
+    if (e.pointerType === 'touch' || this.tool === 'picker' || !this.enabled || this.panKey || this.pan) {
       this.cursor.classList.remove('visible');
       return;
     }
